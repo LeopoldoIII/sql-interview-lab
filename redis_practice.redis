@@ -1,0 +1,83 @@
+# ==============================================================================
+# 🚀 REDIS KEY-VALUE & CACHING PRACTICE GUIDE - INTERVIEW LAB
+# ==============================================================================
+# Connect to Redis CLI using Docker:
+#   docker exec -it cache_interview_redis redis-cli
+#
+# Or use the RedisInsight Web GUI:
+#   http://localhost:5540
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. STRINGS & CACHE EXPIRATION (Cache-Aside Pattern)
+# Set key-value pairs with Expiration in seconds (TTL - Time To Live).
+# ------------------------------------------------------------------------------
+# Set user cache with 60 seconds expiration
+SETEX user:101:session 60 "active_token_abc123"
+
+# Read key
+GET user:101:session
+
+# Check remaining Time-To-Live (in seconds)
+TTL user:101:session
+
+# Atomic Increment (useful for rate limiting & page views)
+INCR pageviews:home
+INCRBY pageviews:home 5
+
+# ------------------------------------------------------------------------------
+# 2. HASHES (Structured Entity Objects)
+# Store employee profile as a Hash map.
+# ------------------------------------------------------------------------------
+HSET employee:101 first_name "Alice" last_name "Smith" department "Engineering" salary "85000"
+HGETALL employee:101
+HGET employee:101 salary
+HINCRBY employee:101 salary 5000
+
+# ------------------------------------------------------------------------------
+# 3. LISTS (Message Queues & FIFO/LIFO Buffers)
+# Push and pop items in task queues.
+# ------------------------------------------------------------------------------
+# Push tasks into queue (left push)
+LPUSH task_queue "send_welcome_email:101"
+LPUSH task_queue "generate_invoice:202"
+
+# Get all items in list
+LRANGE task_queue 0 -1
+
+# Worker pops task (right pop - FIFO)
+RPOP task_queue
+
+# ------------------------------------------------------------------------------
+# 4. SETS (Unique Collections & Social/Tag Intersections)
+# Manage unique skills or tags per user.
+# ------------------------------------------------------------------------------
+SADD user:101:skills "JavaScript" "Python" "MongoDB" "Redis"
+SADD user:102:skills "Java" "Docker" "MongoDB" "Redis"
+
+# Get all elements in set
+SMEMBERS user:101:skills
+
+# Find common skills between two users (Intersection)
+SINTER user:101:skills user:102:skills
+
+# ------------------------------------------------------------------------------
+# 5. SORTED SETS (Leaderboards, Rankings & Sliding Window Rate Limiting)
+# Keep scores sorted automatically.
+# ------------------------------------------------------------------------------
+ZADD employee_sales_leaderboard 15000 "employee:101"
+ZADD employee_sales_leaderboard 32000 "employee:102"
+ZADD employee_sales_leaderboard 28000 "employee:105"
+
+# Get top 2 highest performers (descending order with scores)
+ZREVRANGE employee_sales_leaderboard 0 1 WITHSCORES
+
+# Get rank of specific employee
+ZREVRANK employee_sales_leaderboard "employee:101"
+
+# ------------------------------------------------------------------------------
+# 6. PUB/SUB (Real-Time Messaging System)
+# Subscribe to channel:  SUBSCRIBE system_notifications
+# Publish message:      PUBLISH system_notifications "New employee hired!"
+# ------------------------------------------------------------------------------
+PUBLISH system_notifications "Database backup completed successfully."

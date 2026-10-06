@@ -1,0 +1,24 @@
+# Seed Redis with initial interview test data
+
+# 1. Sessions & Cache
+SETEX user:101:session 3600 "token_session_alice_9988"
+SETEX user:102:session 3600 "token_session_bob_7766"
+SET pageviews:home 150
+
+# 2. Employee Profile Hashes
+HSET employee:101 first_name "Alice" last_name "Smith" department "Engineering" salary "85000"
+HSET employee:102 first_name "Bob" last_name "Johnson" department "Engineering" salary "92000"
+HSET employee:103 first_name "Charlie" last_name "Brown" department "Sales" salary "65000"
+
+# 3. Skills Sets
+SADD user:101:skills "JavaScript" "Python" "MongoDB" "Redis"
+SADD user:102:skills "Java" "Docker" "MongoDB" "Redis"
+
+# 4. Task Queue (List)
+LPUSH task_queue "send_welcome_email:101"
+LPUSH task_queue "generate_invoice:202"
+
+# 5. Leaderboard (Sorted Set)
+ZADD sales_leaderboard 15000 "employee:101"
+ZADD sales_leaderboard 32000 "employee:102"
+ZADD sales_leaderboard 28000 "employee:105"

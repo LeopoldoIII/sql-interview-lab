@@ -1,6 +1,6 @@
-# 🚀 SQL, NoSQL & GraphQL Interview Practice Lab
+# 🚀 SQL, NoSQL, GraphQL & Redis Interview Practice Lab
 
-A zero-setup, containerized sandbox environment powered by **Docker**, **PostgreSQL 16**, **MongoDB 7.0**, and **PostGraphile (GraphQL Engine)**, pre-populated with realistic schemas and datasets to practice SQL, NoSQL, and GraphQL interview questions from beginner to advanced levels.
+A zero-setup, containerized sandbox environment powered by **Docker**, **PostgreSQL 16**, **MongoDB 7.0**, **PostGraphile (GraphQL Engine)**, and **Redis 7 (In-Memory Cache)**, pre-populated with realistic schemas and datasets to practice database interview questions from beginner to advanced levels.
 
 
 ---
@@ -21,7 +21,7 @@ Before getting started, make sure you have the following tools installed:
 Run the following command in your terminal inside the project directory:
 
 ```bash
-# Option A: Start the ENTIRE sandbox environment (SQL, NoSQL, GraphQL & Web GUIs)
+# Option A: Start the ENTIRE sandbox environment (SQL, NoSQL, GraphQL, Redis & Web GUIs)
 docker compose --profile all up -d
 
 # Option B: Start SQL only (PostgreSQL + PGWeb Client)
@@ -30,16 +30,21 @@ docker compose --profile sql up -d
 # Option C: Start GraphQL only (PostgreSQL + GraphiQL IDE)
 docker compose --profile graphql up -d
 
-# Option D: Start NoSQL only (MongoDB)
+# Option D: Start NoSQL Document DB only (MongoDB)
 docker compose --profile nosql up -d
+
+# Option E: Start Redis Cache & Key-Value only (Redis 7 + RedisInsight GUI)
+docker compose --profile redis up -d
 ```
 
 ### Included Containers:
 * **PostgreSQL 16** container (`sql_interview_postgres`) on port `5432`.
 * **MongoDB 7.0** container (`nosql_interview_mongo`) on port `27017`.
+* **Redis 7** container (`cache_interview_redis`) on port `6379`.
 * **PGWeb GUI** container (`sql_interview_pgweb`) on port `8081`.
 * **GraphQL Engine & GraphiQL IDE** container (`sql_interview_graphql`) on port `5000`.
-* Automatically executes `sql_init/01_schema_and_data.sql` to populate initial datasets.
+* **RedisInsight Web GUI** container (`cache_interview_redisinsight`) on port `5540`.
+* Automatically executes initialization scripts to populate test datasets.
 
 
 
@@ -49,8 +54,12 @@ docker compose --profile nosql up -d
 
 * **PostgreSQL Web Client (pgweb):** 👉 **[http://localhost:8081](http://localhost:8081)**
 * **GraphQL Interactive Playground (GraphiQL):** 👉 **[http://localhost:5000/graphiql](http://localhost:5000/graphiql)**
+* **RedisInsight Key-Value GUI:** 👉 **[http://localhost:5540](http://localhost:5540)**
 
-> 💡 **GraphQL Practice Guide:** Open [`graphql_practice.graphql`](file:///Users/usermone/local/projects/sql/sql-interview-lab/graphql_practice.graphql) to copy-paste pre-built queries for Fields, Relational Joins, Filtering, Aliases, Fragments, Variables, and Mutations!
+> 💡 **Practice Guides:**
+> - **GraphQL Guide:** Open [`graphql_practice.graphql`](file:///Users/usermone/local/projects/sql/sql-interview-lab/graphql_practice.graphql)
+> - **MongoDB Guide:** Open [`mongo_practice.js`](file:///Users/usermone/local/projects/sql/sql-interview-lab/mongo_practice.js)
+> - **Redis Guide:** Open [`redis_practice.redis`](file:///Users/usermone/local/projects/sql/sql-interview-lab/redis_practice.redis)
 
 ---
 
@@ -63,16 +72,22 @@ docker compose --profile nosql up -d
 * **Password:** `adminpassword`
 * **Database:** `interview_db`
 
-#### 🍃 MongoDB (NoSQL Database)
+#### 🍃 MongoDB (NoSQL Document Database)
 * **Host:** `localhost` (or `127.0.0.1`)
 * **Port:** `27017`
 * **User:** `admin`
 * **Password:** `adminpassword`
 * **Database:** `interview_nosql`
 
+#### 🔴 Redis (In-Memory Key-Value & Cache)
+* **Host:** `localhost` (or `127.0.0.1`)
+* **Port:** `6379`
+* **RedisInsight GUI:** `http://localhost:5540`
+
 #### 🚀 GraphQL Engine (PostGraphile)
 * **GraphiQL IDE:** `http://localhost:5000/graphiql`
 * **GraphQL HTTP Endpoint:** `http://localhost:5000/graphql`
+
 
 
 ---
@@ -385,4 +400,70 @@ db.projects.aggregate([
   { $unwind: "$lead_details" }
 ]);
 ```
+
+---
+
+#### 🔴 Redis Practice (In-Memory Key-Value & Caching)
+
+> 💡 **Redis Practice Guide:** Open [`redis_practice.redis`](file:///Users/usermone/local/projects/sql/sql-interview-lab/redis_practice.redis) for full CLI commands covering Cache TTL, Hashes, Task Queues, Sets, and Leaderboards.
+
+#### 1. Seed Redis with Initial Test Data:
+```bash
+docker exec -i cache_interview_redis redis-cli < redis_init/01_init.redis
+```
+
+#### 2. Connect via Redis CLI:
+```bash
+docker exec -it cache_interview_redis redis-cli
+```
+
+#### 3. Connect via Web GUI:
+Navigate to 👉 **[http://localhost:5540](http://localhost:5540)** (RedisInsight).
+
+
+#### 4. How to Query Redis (Command Cheat Sheet by Data Type):
+
+Unlike SQL (`SELECT`) or MongoDB (`find()`), Redis queries depend on the **Data Type** of the key:
+
+| Data Type | Read / Query Command | Description / Example |
+| :--- | :--- | :--- |
+| **String** | `GET key` | Read string value (`GET user:101:session`) |
+| **Hash** | `HGETALL key` / `HGET key field` | Read entity fields (`HGETALL employee:101`) |
+| **List** | `LRANGE key start stop` | Read array/queue items (`LRANGE task_queue 0 -1`) |
+| **Set** | `SMEMBERS key` / `SINTER k1 k2` | Read unique set / Intersect (`SMEMBERS user:101:skills`) |
+| **Sorted Set** | `ZREVRANGE key 0 N WITHSCORES` | Read Top N leaderboard items (`ZREVRANGE sales_leaderboard 0 2 WITHSCORES`) |
+
+#### 5. Practice Examples:
+
+**Strings (Cache Expiration):**
+```redis
+SETEX user:101:token 60 "active_session_abc"
+GET user:101:token
+TTL user:101:token
+```
+
+**Hashes (Read Employee Entity):**
+```redis
+HSET employee:101 name "Alice" salary "85000"
+HGETALL employee:101
+HGET employee:101 salary
+```
+
+**Lists (Read Task Queue):**
+```redis
+LRANGE task_queue 0 -1
+```
+
+**Sets (Find Common Skills):**
+```redis
+SMEMBERS user:101:skills
+SINTER user:101:skills user:102:skills
+```
+
+**Sorted Sets (Leaderboard Ranking Query):**
+```redis
+ZREVRANGE sales_leaderboard 0 1 WITHSCORES
+```
+
+
 
