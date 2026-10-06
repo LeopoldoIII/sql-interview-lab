@@ -1,10 +1,28 @@
 version: '3.8'
 
+# ==============================================================================
+# 🚀 DOCKER COMPOSE PROFILES GUIDE
+# ==============================================================================
+# Start the full environment (Postgres + MongoDB + PGWeb + GraphQL):
+#   docker compose --profile all up -d
+#
+# SQL & Web GUI only (PostgreSQL + PGWeb):
+#   docker compose --profile sql up -d
+#
+# GraphQL only (PostgreSQL + PostGraphile GraphiQL IDE):
+#   docker compose --profile graphql up -d
+#
+# NoSQL only (MongoDB):
+#   docker compose --profile nosql up -d
+# ==============================================================================
+
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: sql_interview_postgres
     restart: always
+    profiles: ["sql", "graphql", "all"]
     environment:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: adminpassword
@@ -19,6 +37,7 @@ services:
     image: sosedoff/pgweb
     container_name: sql_interview_pgweb
     restart: always
+    profiles: ["sql", "all"]
     environment:
       - PGWEB_DATABASE_URL=postgres://admin:adminpassword@postgres:5432/interview_db?sslmode=disable
     ports:
@@ -30,6 +49,7 @@ services:
     image: mongo:7.0
     container_name: nosql_interview_mongo
     restart: always
+    profiles: ["nosql", "all"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: adminpassword
@@ -37,7 +57,27 @@ services:
     ports:
       - "27017:27017"
     volumes:
+      - ./mongo_init:/docker-entrypoint-initdb.d
       - mongo_data:/data/db
+
+
+  graphql:
+    image: graphile/postgraphile:v4
+    container_name: sql_interview_graphql
+    restart: always
+    profiles: ["graphql", "all"]
+    command:
+      [
+        "--connection", "postgres://admin:adminpassword@postgres:5432/interview_db",
+        "--schema", "public",
+        "--enhance-graphiql",
+        "--allow-explain",
+        "--watch"
+      ]
+    ports:
+      - "5000:5000"
+    depends_on:
+      - postgres
 
 volumes:
   postgres_data:

@@ -1,6 +1,7 @@
-# 🚀 SQL & NoSQL Interview Practice Lab
+# 🚀 SQL, NoSQL & GraphQL Interview Practice Lab
 
-A zero-setup, containerized sandbox environment powered by **Docker**, **PostgreSQL 16**, and **MongoDB 7.0**, pre-populated with realistic schemas and datasets to practice SQL interview questions from beginner to advanced levels.
+A zero-setup, containerized sandbox environment powered by **Docker**, **PostgreSQL 16**, **MongoDB 7.0**, and **PostGraphile (GraphQL Engine)**, pre-populated with realistic schemas and datasets to practice SQL, NoSQL, and GraphQL interview questions from beginner to advanced levels.
+
 
 ---
 
@@ -20,24 +21,36 @@ Before getting started, make sure you have the following tools installed:
 Run the following command in your terminal inside the project directory:
 
 ```bash
-docker compose up -d
+# Option A: Start the ENTIRE sandbox environment (SQL, NoSQL, GraphQL & Web GUIs)
+docker compose --profile all up -d
+
+# Option B: Start SQL only (PostgreSQL + PGWeb Client)
+docker compose --profile sql up -d
+
+# Option C: Start GraphQL only (PostgreSQL + GraphiQL IDE)
+docker compose --profile graphql up -d
+
+# Option D: Start NoSQL only (MongoDB)
+docker compose --profile nosql up -d
 ```
 
-This will automatically pull and start:
-* **PostgreSQL 16** container (`sql_interview_postgres`) running on port `5432`.
-* **MongoDB 7.0** container (`nosql_interview_mongo`) running on port `27017`.
-* **PGWeb GUI** container (`sql_interview_pgweb`) running on port `8081`.
+### Included Containers:
+* **PostgreSQL 16** container (`sql_interview_postgres`) on port `5432`.
+* **MongoDB 7.0** container (`nosql_interview_mongo`) on port `27017`.
+* **PGWeb GUI** container (`sql_interview_pgweb`) on port `8081`.
+* **GraphQL Engine & GraphiQL IDE** container (`sql_interview_graphql`) on port `5000`.
 * Automatically executes `sql_init/01_schema_and_data.sql` to populate initial datasets.
+
+
 
 ---
 
-## 🌐 Web Database GUI (No Extension Required!)
+## 🌐 Web GUIs & Interactive IDEs
 
-Don't want to install any editor extensions? Simply open your web browser after running `docker compose up -d`:
+* **PostgreSQL Web Client (pgweb):** 👉 **[http://localhost:8081](http://localhost:8081)**
+* **GraphQL Interactive Playground (GraphiQL):** 👉 **[http://localhost:5000/graphiql](http://localhost:5000/graphiql)**
 
-👉 **[http://localhost:8081](http://localhost:8081)**
-
-**pgweb** is automatically connected to your PostgreSQL database! You can view tables, run SQL queries, and export results directly from your web browser with zero configuration.
+> 💡 **GraphQL Practice Guide:** Open [`graphql_practice.graphql`](file:///Users/usermone/local/projects/sql/sql-interview-lab/graphql_practice.graphql) to copy-paste pre-built queries for Fields, Relational Joins, Filtering, Aliases, Fragments, Variables, and Mutations!
 
 ---
 
@@ -57,11 +70,18 @@ Don't want to install any editor extensions? Simply open your web browser after 
 * **Password:** `adminpassword`
 * **Database:** `interview_nosql`
 
+#### 🚀 GraphQL Engine (PostGraphile)
+* **GraphiQL IDE:** `http://localhost:5000/graphiql`
+* **GraphQL HTTP Endpoint:** `http://localhost:5000/graphql`
+
+
 ---
 
 ## 📊 Database Schema (ERD Diagram)
 
-The initial PostgreSQL database (`interview_db`) comes pre-seeded with 3 relational tables:
+### 🐘 PostgreSQL Relational Schema (ERD)
+
+The PostgreSQL database (`interview_db`) comes pre-seeded with 3 relational tables (`departments`, `employees`, `sales`):
 
 ```mermaid
 erDiagram
@@ -92,11 +112,37 @@ erDiagram
     }
 ```
 
-### Note on Seed Data Edge Cases:
-* **Department with 0 employees:** Contains a `'Marketing'` department without any assigned employees to test `LEFT JOIN` vs `INNER JOIN` edge cases.
-* **Self-Referencing Manager:** `employees.manager_id` references `employees.employee_id` to practice `SELF JOIN` queries.
+### 🍃 MongoDB NoSQL Collections & Document Structure
+
+The MongoDB database (`interview_nosql`) comes pre-seeded with 3 document collections (`employees`, `projects`, `activity_logs`) via `mongo_init/01_init_nosql.js`:
+
+```json
+// Collection: employees
+{
+  "employee_id": 101,
+  "first_name": "Alice",
+  "last_name": "Smith",
+  "department": "Engineering",
+  "salary": 85000,
+  "skills": ["JavaScript", "Python", "MongoDB"],
+  "hire_date": "2021-03-15T00:00:00Z",
+  "address": { "city": "San Francisco", "state": "CA" },
+  "status": "Active"
+}
+
+// Collection: projects
+{
+  "project_id": "PROJ-1",
+  "name": "Cloud Migration",
+  "lead_employee_id": 102,
+  "budget": 150000,
+  "tags": ["Cloud", "DevOps"],
+  "status": "In Progress"
+}
+```
 
 ---
+
 
 ## 💻 Running Queries
 
@@ -288,27 +334,55 @@ OFFSET 1 LIMIT 1;
 
 #### 🍃 MongoDB Practice (NoSQL)
 
-You can run NoSQL queries using `mongosh` inside Docker:
+> 💡 **MongoDB Practice Guide:** Open [`mongo_practice.js`](file:///Users/usermone/local/projects/sql/sql-interview-lab/mongo_practice.js) for full copy-pasteable MongoDB queries covering `$match`, `$group`, `$unwind`, `$lookup` (Joins), and indexing.
 
+#### 1. Connect to Mongosh CLI:
 ```bash
 docker exec -it nosql_interview_mongo mongosh -u admin -p adminpassword
 ```
 
-#### MongoDB Aggregation Pipeline Example:
+#### 2. Switch to Database:
 ```javascript
 use interview_nosql;
+```
 
-// Insert sample documents
-db.sales.insertMany([
-  { employee_id: 1, amount: 1500, category: "Tech" },
-  { employee_id: 1, amount: 3200, category: "Tech" },
-  { employee_id: 2, amount: 5000, category: "Services" }
-]);
+#### 3. Common Interview Query Patterns:
 
-// Group and Sum Pipeline
-db.sales.aggregate([
-  { $match: { category: "Tech" } },
-  { $group: { _id: "$employee_id", totalAmount: { $sum: "$amount" } } },
-  { $sort: { totalAmount: -1 } }
+**Find Employees with Specific Skill in City:**
+```javascript
+db.employees.find({
+  skills: "MongoDB",
+  "address.city": "San Francisco"
+});
+```
+
+**Aggregation Pipeline (Department Salary Summary):**
+```javascript
+db.employees.aggregate([
+  { $match: { status: "Active" } },
+  { 
+    $group: { 
+      _id: "$department", 
+      total_employees: { $sum: 1 },
+      avg_salary: { $avg: "$salary" } 
+    } 
+  },
+  { $sort: { avg_salary: -1 } }
 ]);
 ```
+
+**NoSQL JOIN ($lookup Projects with Employee Leads):**
+```javascript
+db.projects.aggregate([
+  {
+    $lookup: {
+      from: "employees",
+      localField: "lead_employee_id",
+      foreignField: "employee_id",
+      as: "lead_details"
+    }
+  },
+  { $unwind: "$lead_details" }
+]);
+```
+

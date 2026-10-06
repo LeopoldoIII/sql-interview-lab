@@ -1,0 +1,157 @@
+# ==============================================================================
+# 🚀 GRAPHQL SYNTAX PRACTICE GUIDE - INTERVIEW LAB
+# ==============================================================================
+# This guide contains ready-to-run GraphQL operations designed to be executed directly
+# in the interactive GraphiQL playground (http://localhost:5000/graphiql).
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. BASIC QUERY (Fields & Collections)
+# Requesting only specific required fields (prevents over-fetching).
+# ------------------------------------------------------------------------------
+query GetBasicDepartments {
+  allDepartments {
+    nodes {
+      departmentId
+      departmentName
+    }
+  }
+}
+
+# ------------------------------------------------------------------------------
+# 2. NESTED RELATIONS (GraphQL Nested Queries / JOINS)
+# Query a department and automatically fetch all nested employees assigned to it
+# without writing manual SQL JOIN statements.
+# ------------------------------------------------------------------------------
+query GetDepartmentsWithEmployees {
+  allDepartments {
+    nodes {
+      departmentName
+      employeesByDepartmentId {
+        nodes {
+          employeeId
+          firstName
+          lastName
+          salary
+        }
+      }
+    }
+  }
+}
+
+# ------------------------------------------------------------------------------
+# 3. ARGUMENTS, FILTERING & ORDERING
+# Filter employees with salary greater than or equal to 70,000 ordered descending.
+# ------------------------------------------------------------------------------
+query HighEarningEmployees {
+  allEmployees(
+    filter: { salary: { greaterThanOrEqualTo: 70000 } }
+    orderBy: SALARY_DESC
+  ) {
+    nodes {
+      firstName
+      lastName
+      salary
+    }
+  }
+}
+
+# ------------------------------------------------------------------------------
+# 4. ALIASES (Renaming fields in the response JSON)
+# Allows executing multiple queries of the same type in a single operation
+# or custom renaming returned JSON keys.
+# ------------------------------------------------------------------------------
+query DepartmentComparison {
+  engineering: departmentByDepartmentId(departmentId: 1) {
+    departmentName
+    employeesByDepartmentId {
+      totalCount
+    }
+  }
+  salesDept: departmentByDepartmentId(departmentId: 2) {
+    departmentName
+    employeesByDepartmentId {
+      totalCount
+    }
+  }
+}
+
+# ------------------------------------------------------------------------------
+# 5. FRAGMENTS (Reusable Field Sets)
+# Define reusable field selections to keep queries DRY.
+# ------------------------------------------------------------------------------
+fragment EmployeeBasicDetails on Employee {
+  employeeId
+  firstName
+  lastName
+  salary
+}
+
+query GetTeamMembers {
+  allEmployees(first: 5) {
+    nodes {
+      ...EmployeeBasicDetails
+      hireDate
+    }
+  }
+}
+
+# ------------------------------------------------------------------------------
+# 6. OPERATION VARIABLES
+# Decouple dynamic values from the query body (standard for client applications).
+# To test this in GraphiQL, use the "Query Variables" tab at the bottom left:
+# { "deptId": 1 }
+# ------------------------------------------------------------------------------
+query GetDepartmentById($deptId: Int!) {
+  departmentByDepartmentId(departmentId: $deptId) {
+    departmentName
+    employeesByDepartmentId {
+      nodes {
+        firstName
+        lastName
+      }
+    }
+  }
+}
+
+# ------------------------------------------------------------------------------
+# 7. DIRECTIVES (@include and @skip)
+# Conditionally include or skip fields based on boolean variables.
+# Query Variables in GraphiQL: { "showSalary": true }
+# ------------------------------------------------------------------------------
+query ConditionalEmployeeData($showSalary: Boolean!) {
+  allEmployees(first: 3) {
+    nodes {
+      firstName
+      lastName
+      salary @include(if: $showSalary)
+    }
+  }
+}
+
+# ------------------------------------------------------------------------------
+# 8. MUTATIONS (Data Modification)
+# Create a new employee in the PostgreSQL database.
+# ------------------------------------------------------------------------------
+mutation CreateNewEmployee {
+  createEmployee(
+    input: {
+      employee: {
+        firstName: "Grace"
+        lastName: "Hopper"
+        departmentId: 1
+        salary: 110000.00
+        hireDate: "2024-01-15"
+      }
+    }
+  ) {
+    employee {
+      employeeId
+      firstName
+      lastName
+      departmentByDepartmentId {
+        departmentName
+      }
+    }
+  }
+}
