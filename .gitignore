@@ -21,8 +21,11 @@ Thumbs.db
 # Logs
 *.log
 
-#sql files
-*.sql
+# Scratch & Test SQL files
+test.sql
+*.scratch.sql
+!sql_init/*.sql
+!sql_practice.sql
 
 # Temporary Files
 tmp/
