@@ -134,6 +134,76 @@ ZREVRANK sales_leaderboard "employee:6"
 
 ---
 
+### 6. Deduplication Patterns & Uniqueness in Redis
+
+Unlike relational databases where you scan tables with `GROUP BY` to find duplicates that already entered the system, **Redis is primarily used as an active deduplication engine to prevent duplicate processing in real time**:
+
+```
++--------------------------------------------------------------------------------------------------+
+|                                  REDIS DEDUPLICATION STRATEGIES                                  |
++------------------------------+---------------------------+---------------------------------------+
+| Use Case                     | Redis Command / Type      | Memory & Performance Profile          |
++------------------------------+---------------------------+---------------------------------------+
+| Webhook & Payment Idempotency| SET key val NX EX <ttl>   | O(1) lock, auto-cleans via TTL        |
+| Task Queue Deduplication     | SADD seen_items <id>      | O(1) membership check before RPUSH    |
+| Big Data Unique Counting     | HyperLogLog (PFADD/COUNT) | Fixed 12 KB memory for millions of IDs|
++------------------------------+---------------------------+---------------------------------------+
+```
+
+---
+
+#### 6.1 The Distributed Idempotency Lock Pattern (`SET ... NX EX`)
+* **Scenario:** A client double-clicks "Submit Order" or a payment provider (Stripe, PayPal) sends the same webhook twice.
+* **Mechanism:** Use atomic `SET` with:
+  * **`NX`**: Only set the key if it does **N**ot e**X**ist.
+  * **`EX <seconds>`**: Expire automatically after the deduplication window expires.
+
+```redis
+# 1st Attempt (Original request):
+SET idempotency:checkout:order_8921 "in_progress" NX EX 120
+# Output: OK (Acquired lock, process the order)
+
+# 2nd Attempt (Duplicate retry within 120 seconds):
+SET idempotency:checkout:order_8921 "in_progress" NX EX 120
+# Output: (nil) -> Reject immediately as duplicate!
+```
+
+---
+
+#### 6.2 Event & Message Queue Deduplication (`SADD` guard)
+* **Problem:** Redis `Lists` (`RPUSH`) allow duplicate items. If producers retry, consumers process the same job multiple times.
+* **Solution:** Guard the queue with a Redis `Set`:
+
+```redis
+# Check and track event ID in a Set:
+SADD processed_events "evt_998124"
+# Returns 1 -> Brand new event, proceed to: RPUSH task_queue "evt_998124"
+
+# If the same event arrives again:
+SADD processed_events "evt_998124"
+# Returns 0 -> Duplicate detected! Skip enqueueing.
+```
+
+---
+
+#### 6.3 Massive Scale Unique Counting (`HyperLogLog`: `PFADD` & `PFCOUNT`)
+* **Problem:** Counting distinct daily active users (DAU) or unique page visitors where you only need the **cardinality count**, not the full list of IDs.
+* **Comparison:**
+  * Storing 100,000,000 unique IDs in a `Set`: Requires **~800 MB to 1.5 GB** of RAM.
+  * `HyperLogLog`: Uses a constant **12 KB of memory** regardless of how many millions of items you add (standard error < 0.81%).
+
+```redis
+# Add user IDs to a daily unique visitor log:
+PFADD unique_visitors:2026-10-13 "user:101" "user:102" "user:103"
+PFADD unique_visitors:2026-10-13 "user:101" # Duplicate user: will not increment count!
+
+# Retrieve the deduplicated unique count:
+PFCOUNT unique_visitors:2026-10-13
+# Returns: 3 (correctly ignores the duplicate user:101)
+```
+
+---
+
 ## 🎯 Redis Practice Challenges
 
 #### Challenge 1: Simple Rate Limiting / Lock
@@ -159,3 +229,17 @@ If the key already exists, Redis returns `nil` and the application rejects the r
 ZREVRANGE sales_leaderboard 0 0 WITHSCORES
 ```
 </details>
+
+#### Challenge 3: Deduplicated Unique Event Counter
+> **Problem:** Log five user interactions (`"usr_1"`, `"usr_2"`, `"usr_1"`, `"usr_3"`, `"usr_2"`) into a structure named `hll:daily_users` and return the total deduplicated user count.
+
+<details>
+<summary>🔍 View Solution</summary>
+
+```redis
+PFADD hll:daily_users "usr_1" "usr_2" "usr_1" "usr_3" "usr_2"
+PFCOUNT hll:daily_users
+# Returns: 3
+```
+</details>
+

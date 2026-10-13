@@ -172,6 +172,95 @@ db.projects.aggregate([
 ]);
 ```
 
+## 📌 Module 3: Finding, Handling & Preventing Duplicates in NoSQL
+
+Unlike relational databases with strict schema constraints, NoSQL document stores often experience duplicates due to schema flexibility, distributed event retries, or lack of cross-document foreign keys.
+
+---
+
+### 3.1 Detecting Duplicates with the Aggregation Pipeline
+The direct MongoDB equivalent to SQL's `GROUP BY ... HAVING COUNT(*) > 1` is `$group` combined with `$match`:
+
+```javascript
+// Detect duplicate employees by email or composite name
+db.employees.aggregate([
+  {
+    $group: {
+      _id: { firstName: "$first_name", lastName: "$last_name" }, // grouping key
+      duplicate_count: { $sum: 1 },
+      document_ids: { $push: "$_id" },                            // collect all ObjectIds
+      salaries: { $push: "$salary" }
+    }
+  },
+  {
+    $match: {
+      duplicate_count: { $gt: 1 }                                 // filter only duplicates
+    }
+  }
+]);
+```
+
+---
+
+### 3.2 Deduplicating & Deleting Redundant Documents
+To delete duplicates while **keeping the original (first created)** document:
+
+```javascript
+// Step 1: Find groups with more than 1 occurrence
+db.employees.aggregate([
+  {
+    $group: {
+      _id: { firstName: "$first_name", lastName: "$last_name" },
+      count: { $sum: 1 },
+      ids: { $push: "$_id" }
+    }
+  },
+  { $match: { count: { $gt: 1 } } }
+]).forEach(function(doc) {
+  // Discard the first element (the original), delete all subsequent copies
+  doc.ids.shift(); 
+  db.employees.deleteMany({ _id: { $in: doc.ids } });
+});
+```
+
+---
+
+### 3.3 Deduplication Inside Document Arrays (`$addToSet` vs `$push`)
+In document databases, duplicates often happen **inside arrays** of a single document (e.g. `skills`, `tags`):
+
+* **`$push`**: Appends elements unconditionally, **allowing duplicates**.
+* **`$addToSet`**: Treats the array like a mathematical set, appending an element **only if it does not already exist**.
+
+```javascript
+// Safely add skills without creating duplicates:
+db.employees.updateOne(
+  { employee_id: 101 },
+  { $addToSet: { skills: "Docker" } } // Will not add "Docker" if it already exists
+);
+
+// Add multiple unique skills at once ($each):
+db.employees.updateOne(
+  { employee_id: 101 },
+  { $addToSet: { skills: { $each: ["Kubernetes", "Docker", "AWS"] } } }
+);
+```
+
+---
+
+### 3.4 Prevention at Database Level: Unique Indexes
+To prevent duplicates from ever being inserted into a collection:
+
+```javascript
+// Single-field unique index:
+db.employees.createIndex({ employee_id: 1 }, { unique: true });
+
+// Compound unique index (first_name + last_name):
+db.employees.createIndex({ first_name: 1, last_name: 1 }, { unique: true });
+
+// Sparse unique index (only enforces uniqueness when the field exists and is not null):
+db.employees.createIndex({ "address.zipcode": 1 }, { unique: true, sparse: true });
+```
+
 ---
 
 ## 🎯 MongoDB Practice Challenges
@@ -209,3 +298,24 @@ db.employees.find({
 });
 ```
 </details>
+
+#### Challenge 3: Detect Duplicate Project Budgets
+> **Question:** Write an aggregation query on `projects` to identify if any projects share the exact same `budget`. Return the budget value, how many projects share it, and the list of project names.
+
+<details>
+<summary>🔍 View Solution</summary>
+
+```javascript
+db.projects.aggregate([
+  {
+    $group: {
+      _id: "$budget",
+      count: { $sum: 1 },
+      project_names: { $push: "$name" }
+    }
+  },
+  { $match: { count: { $gt: 1 } } }
+]);
+```
+</details>
+

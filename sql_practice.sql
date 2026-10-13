@@ -232,3 +232,51 @@ FROM departments d
 WHERE NOT EXISTS (
     SELECT 1 FROM employees e WHERE e.department_id = d.department_id
 );
+
+-- 5.5 Deduplication: Lookup Tables (Detect duplicates by normalized department_name)
+SELECT 
+    LOWER(TRIM(department_name)) AS normalized_name,
+    COUNT(*) AS total_occurrences,
+    ARRAY_AGG(department_id) AS conflicting_ids
+FROM departments
+GROUP BY LOWER(TRIM(department_name))
+HAVING COUNT(*) > 1;
+
+-- 5.6 Deduplication: Entity Tables (Find duplicates using ROW_NUMBER)
+WITH RankedEmployees AS (
+    SELECT 
+        employee_id,
+        first_name,
+        last_name,
+        department_id,
+        salary,
+        hire_date,
+        ROW_NUMBER() OVER (
+            PARTITION BY department_id, salary 
+            ORDER BY hire_date ASC, employee_id ASC
+        ) AS duplicate_rank
+    FROM employees
+)
+SELECT 
+    employee_id,
+    first_name,
+    last_name,
+    department_id,
+    salary,
+    CASE 
+        WHEN duplicate_rank = 1 THEN 'KEEP (Original)'
+        ELSE 'DELETE (Duplicate)'
+    END AS action_plan
+FROM RankedEmployees
+ORDER BY department_id, salary, duplicate_rank;
+
+-- 5.7 Deduplication: Transactional Tables (Detect duplicate sales transactions)
+SELECT 
+    employee_id,
+    sale_date,
+    amount,
+    COUNT(*) AS duplicate_count
+FROM sales
+GROUP BY employee_id, sale_date, amount
+HAVING COUNT(*) > 1;
+

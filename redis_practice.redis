@@ -79,5 +79,16 @@ ZREVRANK employee_sales_leaderboard "employee:101"
 # 6. PUB/SUB (Real-Time Messaging System)
 # Subscribe to channel:  SUBSCRIBE system_notifications
 # Publish message:      PUBLISH system_notifications "New employee hired!"
-# ------------------------------------------------------------------------------
 PUBLISH system_notifications "Database backup completed successfully."
+
+# ------------------------------------------------------------------------------
+# 8. DEDUPLICATION PATTERNS & HYPERLOGLOG
+# Idempotency lock (SET NX EX) and Cardinality counting without duplicates
+# ------------------------------------------------------------------------------
+# Idempotency lock for 60 seconds
+SET idempotency:checkout:order_1001 "processing" NX EX 60
+
+# HyperLogLog: Count unique visitors discarding duplicate hits
+PFADD daily_visitors "ip_192.168.1.1" "ip_192.168.1.2" "ip_192.168.1.1" "ip_192.168.1.3"
+PFCOUNT daily_visitors
+

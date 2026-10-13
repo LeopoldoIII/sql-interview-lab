@@ -497,8 +497,236 @@ WHERE NOT EXISTS (
 
 ---
 
+### 5.3 Finding & Managing Duplicates Across Different Table Types
+Finding and handling duplicate records is one of the most frequently asked SQL interview questions and everyday data quality tasks. The strategy depends directly on the **type and structure of the table**:
+
+| Table Type | Architectural Characteristics | Real-World Scenario | Best Approach |
+| :--- | :--- | :--- | :--- |
+| **1. Lookup / Catalog** | Single-column natural key | `departments`, `roles`, categories | `GROUP BY` + `HAVING` with `LOWER(TRIM(...))` |
+| **2. Master Entity** | Surrogate PK with composite business keys | `employees`, `users`, customers | `ROW_NUMBER() OVER (PARTITION BY ...)` |
+| **3. Transactional / Fact** | High-volume events, timestamps, money | `sales`, `orders`, payment logs | Window functions (`PARTITION BY` + `ORDER BY`) or `LAG()` |
+| **4. Junction / Mapping** | Composite PK (N:M relationships) | `employee_projects`, `user_roles` | Self-JOIN or `GROUP BY` on composite keys |
+| **5. Staging / Heap** | Raw imports, **no primary key**, 100% clones | ETL batches, CSV import staging | System row pointer (`ctid` in PostgreSQL) |
+
+---
+
+#### 1. Lookup & Catalog Tables (Dimension / Dictionary Tables)
+* **Context:** Tables like `departments` or `categories` where a single descriptive column (e.g. `department_name`) should be unique.
+* **Common Cause:** Human typo, inconsistent whitespace, or casing differences (`'Marketing'`, `'marketing'`, `'Marketing '`).
+
+```sql
+-- Step 1: Detect duplicate entries ignoring case and whitespace
+SELECT 
+    LOWER(TRIM(department_name)) AS normalized_name,
+    COUNT(*) AS total_occurrences,
+    ARRAY_AGG(department_id) AS conflicting_ids
+FROM departments
+GROUP BY LOWER(TRIM(department_name))
+HAVING COUNT(*) > 1;
+
+-- Step 2: Safe Deduplication (Keep the lowest ID and reassign children)
+-- In production, reassign child foreign keys first before deletion:
+-- UPDATE employees SET department_id = 1 WHERE department_id = 99;
+DELETE FROM departments
+WHERE department_id NOT IN (
+    SELECT MIN(department_id)
+    FROM departments
+    GROUP BY LOWER(TRIM(department_name))
+);
+```
+
+---
+
+#### 2. Master Entity Tables (Composite Business Keys)
+* **Context:** Tables like `employees` or `users` that possess a surrogate primary key (`employee_id`), but have business duplicates across multiple columns (e.g. identical `first_name` + `last_name`, or duplicate tax IDs / emails).
+* **Objective:** Find duplicates and decide whether to preserve the **oldest record** (original registration) or the **latest record** (most updated profile).
+
+```sql
+-- Step 1: Quick count of duplicate employee names
+SELECT 
+    first_name, 
+    last_name, 
+    COUNT(*) AS occurrences
+FROM employees
+GROUP BY first_name, last_name
+HAVING COUNT(*) > 1;
+
+-- Step 2: Inspect full details of all duplicates (original vs clones)
+WITH RankedEmployees AS (
+    SELECT 
+        employee_id,
+        first_name,
+        last_name,
+        hire_date,
+        salary,
+        ROW_NUMBER() OVER (
+            PARTITION BY first_name, last_name 
+            ORDER BY hire_date ASC, employee_id ASC
+        ) AS row_num
+    FROM employees
+)
+SELECT * 
+FROM RankedEmployees
+WHERE row_num > 1; -- row_num = 1 is the original; row_num > 1 are the duplicates
+
+-- Step 3: Delete redundant duplicates keeping only the earliest hire
+WITH DuplicatesToDelete AS (
+    SELECT employee_id
+    FROM (
+        SELECT 
+            employee_id,
+            ROW_NUMBER() OVER (
+                PARTITION BY first_name, last_name 
+                ORDER BY hire_date ASC, employee_id ASC
+            ) AS row_num
+        FROM employees
+    ) ranked
+    WHERE ranked.row_num > 1
+)
+DELETE FROM employees
+WHERE employee_id IN (SELECT employee_id FROM DuplicatesToDelete);
+```
+
+---
+
+#### 3. Transactional & Event Tables (Sales, Orders, Payments)
+* **Context:** High-throughput event tables like `sales` where duplicates occur due to network retries, client double-clicks, or race conditions.
+* **Objective:** Detect repeated transactions with matching `employee_id`, `amount`, and `sale_date`.
+
+```sql
+-- Step 1: Detect duplicate sales entries and calculate inflated revenue
+SELECT 
+    employee_id,
+    amount,
+    sale_date,
+    COUNT(*) AS duplicate_count,
+    SUM(amount) AS total_inflated_amount
+FROM sales
+GROUP BY employee_id, amount, sale_date
+HAVING COUNT(*) > 1;
+
+-- Step 2: Time-gap analysis (detect near-identical transactions within seconds/same day)
+WITH SalesTimeline AS (
+    SELECT 
+        sale_id,
+        employee_id,
+        amount,
+        sale_date,
+        LAG(sale_date) OVER (
+            PARTITION BY employee_id, amount 
+            ORDER BY sale_date
+        ) AS previous_sale_date
+    FROM sales
+)
+SELECT * 
+FROM SalesTimeline 
+WHERE sale_date = previous_sale_date;
+```
+
+---
+
+#### 4. Junction & Association Tables (Many-to-Many Relationships)
+* **Context:** Tables like `employee_projects` or `user_roles` linking two entities. If a composite primary key `(employee_id, project_id)` was not enforced, identical relationship rows can occur.
+
+```sql
+-- Step 1: Detect duplicate pairings
+SELECT 
+    employee_id, 
+    project_id, 
+    COUNT(*) AS link_occurrences
+FROM employee_projects
+GROUP BY employee_id, project_id
+HAVING COUNT(*) > 1;
+
+-- Step 2: Keep only one pair using Self-JOIN or temporary deduplication
+DELETE FROM employee_projects a
+USING employee_projects b
+WHERE a.ctid > b.ctid
+  AND a.employee_id = b.employee_id
+  AND a.project_id = b.project_id;
+```
+
+---
+
+#### 5. Staging & Heap Tables (Raw Tables without Any Primary Key)
+* **Context:** Raw ETL staging tables populated directly from CSV/JSON dumps where rows can be **100% identical across every column**, and there is no `id` column.
+* **Problem:** In standard SQL, you cannot run `DELETE WHERE id IN (...)` because no primary key exists.
+* **PostgreSQL Solution:** Use the internal physical tuple identifier **`ctid`**.
+
+```sql
+-- Delete exact full-row duplicates while keeping the first physical copy:
+DELETE FROM staging_sales
+WHERE ctid NOT IN (
+    SELECT MIN(ctid)
+    FROM staging_sales
+    GROUP BY employee_id, amount, sale_date
+);
+```
+
+---
+
+### 🎯 Module 5 Challenges
+
+#### Challenge 5.1: Duplicate Sales Hunter
+> **Question:** Write a query against the `sales` table to identify if any employee has multiple sales transactions with the exact same `amount` on the exact same `sale_date`. Return `employee_id`, `sale_date`, `amount`, and the duplicate count.
+
+<details>
+<summary>🔍 View Solution 5.1</summary>
+
+```sql
+SELECT 
+    employee_id,
+    sale_date,
+    amount,
+    COUNT(*) AS duplicate_count
+FROM sales
+GROUP BY employee_id, sale_date, amount
+HAVING COUNT(*) > 1
+ORDER BY duplicate_count DESC;
+```
+</details>
+
+#### Challenge 5.2: Employee Deduplication Action Plan
+> **Question:** Generate an audit report for `employees` flagging each row with an action plan: `'KEEP'` for the original (earliest `hire_date`) or `'DELETE'` for duplicates sharing the same `department_id` and `salary`.
+
+<details>
+<summary>🔍 View Solution 5.2</summary>
+
+```sql
+WITH RankedEmployees AS (
+    SELECT 
+        employee_id,
+        first_name,
+        last_name,
+        department_id,
+        salary,
+        hire_date,
+        ROW_NUMBER() OVER (
+            PARTITION BY department_id, salary 
+            ORDER BY hire_date ASC, employee_id ASC
+        ) AS duplicate_rank
+    FROM employees
+)
+SELECT 
+    employee_id,
+    first_name,
+    last_name,
+    department_id,
+    salary,
+    CASE 
+        WHEN duplicate_rank = 1 THEN 'KEEP'
+        ELSE 'DELETE'
+    END AS action_plan
+FROM RankedEmployees
+ORDER BY department_id, salary, duplicate_rank;
+```
+</details>
+
+---
+
 ## 🎯 Best Practices for Technical Interviews
 1. **Always anticipate `NULL` values:** Before answering what a query returns, verify how nulls are handled.
 2. **Prefer `DENSE_RANK()` over `LIMIT 1 OFFSET 1`** when asked for the "N-th highest salary", because ties can produce unexpected results with offset limits.
 3. **Favor CTEs (`WITH`) over nested subqueries** in the `FROM` clause; readability and clean modularity are heavily rewarded.
 4. **Beware of `COUNT(*)` in `LEFT JOIN`:** Always count the foreign table's primary key (`COUNT(right_table.id)`).
+5. **Never rely on `DISTINCT` to fix duplicate bugs:** In interviews, explain that `DISTINCT` hides underlying join or data modeling issues; always identify the root cause using `GROUP BY ... HAVING COUNT(*) > 1` or `ROW_NUMBER()`.

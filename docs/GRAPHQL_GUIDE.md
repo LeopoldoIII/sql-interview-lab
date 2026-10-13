@@ -141,10 +141,69 @@ mutation AddNewEmployee {
 }
 ```
 
+## 📌 Module 4: How GraphQL Handles Duplicates ($N+1$ Problem & Client Caching)
+
+In technical interviews, a frequent trick question is: *"How do I query distinct rows or remove duplicate data in GraphQL?"*
+
+> 💡 **Core Concept:** GraphQL is an API specification and transport layer, **not a database**. It has no native `DISTINCT` or `GROUP BY` keywords. Instead, duplicates are addressed across three distinct architectural layers:
+
+```
++----------------------------------------------------------------------------------------------------+
+|                                GRAPHQL DEDUPLICATION ARCHITECTURE                                  |
++--------------------------+-------------------------------+-----------------------------------------+
+| Architectural Layer      | The Problem                   | Industry Standard Solution              |
++--------------------------+-------------------------------+-----------------------------------------+
+| 1. Database Resolution   | $N+1$ duplicate SQL queries   | DataLoader (Batching & Caching)         |
+| 2. Client-Side State     | Storing duplicate objects     | Apollo / Relay Normalized Cache         |
+| 3. Mutations / Writes    | Retrying identical mutations  | clientMutationId / Idempotency tokens   |
++--------------------------+-------------------------------+-----------------------------------------+
+```
+
 ---
 
-## 🎯 GraphQL Practice Challenge
+### 4.1 The $N+1$ Problem: Deduplicating Repetitive Database Queries
+When you query 50 employees and their associated department:
 
+```graphql
+query EmployeesWithDepartment {
+  allEmployees {
+    nodes {
+      firstName
+      departmentByDepartmentId {
+        departmentName
+      }
+    }
+  }
+}
+```
+
+* **The Problem (Naive Execution):** The server runs 1 query for employees, plus **50 separate SQL queries** asking for department data—even if all 50 employees belong to just 2 departments!
+* **The Solution: `DataLoader`**:
+  * **Batching:** Collects all requested `departmentId` values across the request and executes a single batched query:  
+    `SELECT * FROM departments WHERE department_id IN (1, 2);`
+  * **Memoization Cache:** Within a single HTTP request lifecycle, once `department_id: 1` is resolved, subsequent requests for department 1 return the cached in-memory reference with zero extra database hits.
+
+---
+
+### 4.2 Client-Side Deduplication: Normalized Cache (Apollo Client / Relay)
+When a GraphQL client receives responses from multiple queries, it avoids creating duplicate copies of the same entity in memory using **Normalized Caching**:
+
+1. Every object is assigned an internal cache key:  
+   `CacheKey = __typename + ":" + id` (e.g., `Employee:101`).
+2. If Query A fetches `{ employeeId: 101, firstName: "Alice" }` and Query B later fetches `{ employeeId: 101, salary: 85000 }`, the client normalizer merges them into a **single unique in-memory entity**, completely eliminating duplicated state.
+
+---
+
+### 4.3 Mutation Idempotency (`clientMutationId`)
+To prevent duplicated record creation when mobile or web clients experience intermittent connectivity:
+* Mutations in specifications like Relay accept a unique `clientMutationId`.
+* If a mutation is resent due to network timeout, the server recognizes the `clientMutationId` and returns the previously processed result instead of re-inserting the record.
+
+---
+
+## 🎯 GraphQL Practice Challenges
+
+#### Challenge 1: Manager Hierarchy
 > **Question:** Write a query in GraphiQL that returns each employee's first name along with the first and last name of their direct manager in a single nested field.
 
 <details>
@@ -164,3 +223,25 @@ query EmployeesWithManagers {
 }
 ```
 </details>
+
+#### Challenge 2: Deep Relational Query (Avoiding Over-fetching)
+> **Question:** Query department ID 1 (`Engineering`) along with all its employees and only their `salary` and `hireDate`, without requesting unneeded personal information.
+
+<details>
+<summary>🔍 View Solution</summary>
+
+```graphql
+query EngineeringPayrollDetails {
+  departmentByDepartmentId(departmentId: 1) {
+    departmentName
+    employeesByDepartmentId {
+      nodes {
+        salary
+        hireDate
+      }
+    }
+  }
+}
+```
+</details>
+

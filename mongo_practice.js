@@ -111,3 +111,24 @@ db.employees.updateOne(
 );
 
 db.employees.createIndex({ department: 1, salary: -1 });
+
+// ------------------------------------------------------------------------------
+// 8. DEDUPLICATION IN NOSQL
+// Detect duplicate values using $group + $match (Equivalent to GROUP BY ... HAVING)
+// ------------------------------------------------------------------------------
+db.projects.aggregate([
+  {
+    $group: {
+      _id: "$budget",
+      count: { $sum: 1 },
+      project_ids: { $push: "$project_id" },
+      project_names: { $push: "$name" }
+    }
+  },
+  {
+    $match: {
+      count: { $gt: 1 }
+    }
+  }
+]);
+
